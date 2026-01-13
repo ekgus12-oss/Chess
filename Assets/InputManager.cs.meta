@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+guid: 7db3d498a9ace5e439e3304fcb29b247
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - stockfishManager: {instanceID: 0}
+  - boardGenerator: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
