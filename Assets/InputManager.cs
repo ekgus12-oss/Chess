@@ -23,6 +23,7 @@ public class InputManager : MonoBehaviour
     private ChessPiece selectedPiece;
     private bool isWhiteTurn = true;
     private bool isGameOver = false;
+    private float lastEvaluation = 0f;
 
     void Update()
     {
@@ -76,6 +77,16 @@ public class InputManager : MonoBehaviour
             {
                 Deselect();
             }
+        }
+        // [수정] 기물을 두기 직전에 현재 판의 점수를 먼저 기록합니다.
+        if (selectedPiece != null && IsValidMove(selectedPiece, new Vector2Int(x, y)))
+        {
+            // 스톡피쉬에게 현재 FEN을 주고 점수를 물어봅니다.
+            // (주의: StockfishManager에 GetEvaluation 함수가 있다고 가정)
+            lastEvaluation = stockfish.GetEvaluation(bg.GetCurrentFEN(isWhiteTurn));
+
+            MovePiece(selectedPiece, x, y);
+            EndTurn();
         }
     }
 
@@ -145,14 +156,32 @@ public class InputManager : MonoBehaviour
         {
             visualizer.ShowLastMove(oldPos, newPos);
         }
-        // [추가] UI 매니저에게 알림!
         if (uiManager != null)
         {
-            string colorName = piece.color == PieceColor.White ? "White" : "Black";
-            uiManager.UpdateLastMove(colorName, PosToString(oldPos), PosToString(newPos));
-        }
+            // 1. 기물을 두기 전 점수 (LastEvaluation은 이미 저장되어 있다고 가정)
+            float beforeMove = lastEvaluation;
 
-        Deselect();
+            // 2. 기물을 둔 후 점수 측정
+            float afterMove = stockfish.GetEvaluation(bg.GetCurrentFEN(isWhiteTurn));
+
+            // 3. [핵심] 현재 누구의 턴이었느냐에 따라 이득/손해 계산을 뒤집어야 합니다.
+            float scoreChange;
+
+            if (isWhiteTurn)
+            {
+                // 백의 턴: 점수가 높아질수록(양수) 좋은 수
+                scoreChange = afterMove - beforeMove;
+            }
+            else
+            {
+                // 흑의 턴: 점수가 낮아질수록(음수 쪽으로 갈수록) 좋은 수
+                // 흑에게 유리해지는 것(음수 증가)을 '양수'로 변환해줘야 UI가 "Best"라고 인식함
+                scoreChange = beforeMove - afterMove;
+            }
+
+            // 이제 이 scoreChange를 UIManager에 보냅니다.
+            uiManager.ProcessMoveEvaluation(new Vector3(x, y, -1), scoreChange);
+        }
     }
 
     void Deselect()
@@ -181,8 +210,7 @@ public class InputManager : MonoBehaviour
 
     public bool IsValidMove(ChessPiece p, Vector2Int end)
     {
-      
-    if (end.x < 0 || end.x > 7 || end.y < 0 || end.y > 7) return false;
+        if (end.x < 0 || end.x > 7 || end.y < 0 || end.y > 7) return false;
 
         Vector2Int start = p.pos;
         if (start == end) return false;

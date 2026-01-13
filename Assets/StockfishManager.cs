@@ -87,4 +87,36 @@ public class StockfishManager : MonoBehaviour
     }
 
     void OnApplicationQuit() { if (stockfishProcess != null) stockfishProcess.Kill(); }
+    // StockfishManager.cs 안에 추가하세요
+
+    public float GetEvaluation(string fen)
+    {
+        if (stockfishProcess == null || stockfishProcess.HasExited) return 0;
+
+        // 스톡피쉬에게 현재 FEN 상황을 분석하라고 명령 (깊이 10정도면 충분히 빠르고 정확함)
+        stockfishProcess.StandardInput.WriteLine("position fen " + fen);
+        stockfishProcess.StandardInput.WriteLine("go depth 10");
+
+        string line;
+        float evalScore = 0;
+
+        // 스톡피쉬의 출력 메시지 중에서 score cp를 찾음
+        while (!(line = stockfishProcess.StandardOutput.ReadLine()).StartsWith("bestmove"))
+        {
+            if (line.Contains("score cp"))
+            {
+                // "score cp 15" 같은 문자열에서 15만 추출
+                string[] parts = line.Split(' ');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (parts[i] == "cp")
+                    {
+                        float.TryParse(parts[i + 1], out evalScore);
+                        break;
+                    }
+                }
+            }
+        }
+        return evalScore;
+    }
 }
