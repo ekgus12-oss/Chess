@@ -36,24 +36,39 @@ public class StockfishManager : MonoBehaviour
         }
     }
 
-    // [중요] 4가지 난이도 설정 로직
+    // [추가] ChatManager에서 봇의 멘탈에 따라 호출할 함수
+    public void SetSkillLevel(int level)
+    {
+        // 스톡피시 Skill Level 공식 범위는 0~20입니다.
+        level = Mathf.Clamp(level, 0, 20);
+        SendUCIMessage($"setoption name Skill Level value {level}");
+
+        // 낮은 레벨일 때 더 인간적인 실수를 유도하기 위해 노이즈 추가 (선택사항)
+        if (level < 5)
+        {
+            SendUCIMessage("setoption name Skill Level Maximum Error 500");
+            SendUCIMessage("setoption name Skill Level Probability 100");
+        }
+    }
+
+    // 기존의 커스텀 난이도 설정
     public void SetDifficultyCustom(string mode)
     {
         switch (mode)
         {
-            case "Teacher": // 친절한 선생님 (낮은 실력, 실수 유발)
-                SendUCIMessage("setoption name Skill Level value 0");
+            case "Teacher":
+                SetSkillLevel(0);
                 break;
-            case "Defender": // 견고한 수비 (높은 실력, 무승부 지향)
-                SendUCIMessage("setoption name Skill Level value 15");
-                SendUCIMessage("setoption name Contempt value -20"); // 소극적
+            case "Defender":
+                SetSkillLevel(15);
+                SendUCIMessage("setoption name Contempt value -20");
                 break;
-            case "Attacker": // 공격적인 (가끔 실수하지만 몰아붙임)
-                SendUCIMessage("setoption name Skill Level value 10");
-                SendUCIMessage("setoption name Contempt value 50"); // 공격적
+            case "Attacker":
+                SetSkillLevel(10);
+                SendUCIMessage("setoption name Contempt value 50");
                 break;
-            case "Balance": // 밸런스형 (표준적인 실력)
-                SendUCIMessage("setoption name Skill Level value 5");
+            case "Balance":
+                SetSkillLevel(5);
                 SendUCIMessage("setoption name Contempt value 0");
                 break;
         }
@@ -70,9 +85,8 @@ public class StockfishManager : MonoBehaviour
 
     public string GetBestMove(string fen)
     {
-        sw.WriteLine("position fen " + fen);
-        sw.WriteLine("go movetime 1000");
-        sw.Flush();
+        SendUCIMessage("position fen " + fen);
+        SendUCIMessage("go movetime 4000");
 
         string line;
         while ((line = sr.ReadLine()) != null)
@@ -86,26 +100,21 @@ public class StockfishManager : MonoBehaviour
         return null;
     }
 
-    void OnApplicationQuit() { if (stockfishProcess != null) stockfishProcess.Kill(); }
-    // StockfishManager.cs 안에 추가하세요
-
     public float GetEvaluation(string fen)
     {
         if (stockfishProcess == null || stockfishProcess.HasExited) return 0;
 
-        // 스톡피쉬에게 현재 FEN 상황을 분석하라고 명령 (깊이 10정도면 충분히 빠르고 정확함)
-        stockfishProcess.StandardInput.WriteLine("position fen " + fen);
-        stockfishProcess.StandardInput.WriteLine("go depth 10");
+        SendUCIMessage("position fen " + fen);
+        SendUCIMessage("go depth 10");
 
         string line;
         float evalScore = 0;
 
-        // 스톡피쉬의 출력 메시지 중에서 score cp를 찾음
-        while (!(line = stockfishProcess.StandardOutput.ReadLine()).StartsWith("bestmove"))
+        // "bestmove"가 나올 때까지 출력물을 읽어 분석 점수를 찾습니다.
+        while ((line = sr.ReadLine()) != null && !line.StartsWith("bestmove"))
         {
             if (line.Contains("score cp"))
             {
-                // "score cp 15" 같은 문자열에서 15만 추출
                 string[] parts = line.Split(' ');
                 for (int i = 0; i < parts.Length; i++)
                 {
@@ -118,5 +127,11 @@ public class StockfishManager : MonoBehaviour
             }
         }
         return evalScore;
+    }
+
+    void OnApplicationQuit()
+    {
+        if (stockfishProcess != null && !stockfishProcess.HasExited)
+            stockfishProcess.Kill();
     }
 }
