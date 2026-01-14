@@ -6,6 +6,10 @@ public class InputManager : MonoBehaviour
 {
     public UIManager uiManager;
 
+    [Header("멘탈 설정")]
+    public float currentMental = 100f;
+    public float maxMental = 100f;
+
     // [도우미 함수] 0,1 좌표를 "a2"로 변환
     string PosToString(Vector2Int pos)
     {
@@ -64,7 +68,10 @@ public class InputManager : MonoBehaviour
             {
                 if (!WouldBeCheckAfterMove(selectedPiece, targetPos))
                 {
+                    // [수정] 여기서 점수를 기록하고 이동시킵니다.
+                    lastEvaluation = stockfish.GetEvaluation(bg.GetCurrentFEN(isWhiteTurn));
                     MovePiece(selectedPiece, x, y);
+                    Deselect(); // 선택 해제 추가
                     EndTurn();
                 }
                 else
@@ -93,6 +100,11 @@ public class InputManager : MonoBehaviour
     void EndTurn()
     {
         isWhiteTurn = !isWhiteTurn;
+        // [추가] 턴이 바뀌었음을 UI에 알림
+        if (uiManager != null)
+        {
+            uiManager.UpdateTurnText(isWhiteTurn);
+        }
         PieceColor nextColor = isWhiteTurn ? PieceColor.White : PieceColor.Black;
 
         if (!HasAnyLegalMoves(nextColor))
@@ -131,18 +143,26 @@ public class InputManager : MonoBehaviour
     {
         if (isGameOver || piece == null) return;
 
-        // 1. [핵심] 잔상을 표시하기 위해 좌표 정보를 변수에 담아둡니다.
+        // 1. [기존 유지] 잔상 및 배경 전환 정보 준비
         Vector2Int oldPos = piece.pos;
-        Vector2Int newPos = new Vector2Int(x, y); // <-- 이 줄이 없어서 에러가 난 것입니다!
+        Vector2Int newPos = new Vector2Int(x, y);
 
-        // 2. 실제 데이터 업데이트 (기존 로직)
+        if (uiManager != null)
+        {
+            string colorStr = (piece.color == PieceColor.White) ? "White" : "Black";
+            string fromStr = PosToString(oldPos);
+            string toStr = PosToString(newPos);
+            uiManager.UpdateLastMove(colorStr, fromStr, toStr);
+        }
+
+        // 2. [기존 유지] 실제 데이터 업데이트
         if (bg.board[x, y] != null) Destroy(bg.board[x, y].gameObject);
 
         bg.board[oldPos.x, oldPos.y] = null;
         bg.board[x, y] = piece;
         piece.pos = newPos;
 
-        // 3. 화면상 위치 이동
+        // 3. [기존 유지] 화면상 위치 이동 및 승급
         piece.transform.position = new Vector3(x, y, -1);
 
         if (piece.type == PieceType.Pawn && (y == 7 || y == 0))
@@ -151,36 +171,41 @@ public class InputManager : MonoBehaviour
             bg.UpdatePieceSprite(piece);
         }
 
-        // 4. [잔상 표시] 비주얼라이저에게 방금 움직인 정보를 전달
+        // 4. [기존 유지] 비주얼라이저 잔상 표시
         if (visualizer != null)
         {
             visualizer.ShowLastMove(oldPos, newPos);
         }
+
+        // 5. [기존 유지 + 멘탈 추가] 점수 평가 및 UI 업데이트
         if (uiManager != null)
         {
-            // 1. 기물을 두기 전 점수 (LastEvaluation은 이미 저장되어 있다고 가정)
             float beforeMove = lastEvaluation;
-
-            // 2. 기물을 둔 후 점수 측정
             float afterMove = stockfish.GetEvaluation(bg.GetCurrentFEN(isWhiteTurn));
-
-            // 3. [핵심] 현재 누구의 턴이었느냐에 따라 이득/손해 계산을 뒤집어야 합니다.
             float scoreChange;
 
             if (isWhiteTurn)
-            {
-                // 백의 턴: 점수가 높아질수록(양수) 좋은 수
                 scoreChange = afterMove - beforeMove;
-            }
             else
-            {
-                // 흑의 턴: 점수가 낮아질수록(음수 쪽으로 갈수록) 좋은 수
-                // 흑에게 유리해지는 것(음수 증가)을 '양수'로 변환해줘야 UI가 "Best"라고 인식함
                 scoreChange = beforeMove - afterMove;
-            }
 
-            // 이제 이 scoreChange를 UIManager에 보냅니다.
+            // 기존 기능: 평가 텍스트 및 봇 메시지 출력
             uiManager.ProcessMoveEvaluation(new Vector3(x, y, -1), scoreChange);
+
+            // --- [신규 추가] 멘탈 게이지 및 숫자 업데이트 로직 ---
+            // 점수 변화(scoreChange)에 따라 실시간으로 멘탈 수치 조정
+            if (scoreChange < -150)      // Blunder: 치명적 실수
+                currentMental -= 20f;
+            else if (scoreChange < -70)  // Inaccuracy: 실수
+                currentMental -= 8f;
+            else if (scoreChange >= 0)   // Best Move 이상: 조금씩 회복
+                currentMental += 3f;
+
+            // 멘탈 값이 0~100 사이를 벗어나지 않게 고정
+            currentMental = Mathf.Clamp(currentMental, 0, maxMental);
+
+            // UIManager의 함수를 호출하여 게이지(Fill Amount)와 숫자(%)를 갱신
+            uiManager.UpdateMentalGauge(currentMental, maxMental);
         }
     }
 
